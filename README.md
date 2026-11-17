@@ -68,6 +68,3 @@ activated as each phase is completed.
   data visualization, bag record/replay.
 
 ---
-# Phase 1: launch the micro-ROS Agent (after firmware is flashed)
-docker run -it --rm -v /dev:/dev --privileged --net=host \
-  microros/micro-ros-agent:jazzy serial --dev /dev/ttyACM0 -v6
