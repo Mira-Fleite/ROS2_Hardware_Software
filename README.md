@@ -63,58 +63,80 @@ activated as each phase is completed.
 
 ---
 
-## 🧠 Architecture
-┌─────────────────────────────────────────────────────────────────┐
-│ Personal PC (Ubuntu) │
-│ │
-│ ┌──────────────────┐ ┌──────────────────┐ │
-│ │ micro-ROS Agent │ │ Control Node │ │
-│ │ (Docker) │ │ (Python) │ │
-│ │ │ │ │ │
-│ │ /dev/ttyUSB0 ───┼──┐ │ sub: /distance │ │
-│ │ │ │ │ pub: /cmd_speed │ │
-│ └──────────────────┘ │ └──────────────────┘ │
-│ │ ▲ │
-│ │ │ /distance │
-│ │ │ /cmd_speed │
-│ │ ┌────────┴─────────┐ │
-│ │ │ Actuator / Alarm │ │
-│ │ │ Node │ │
-│ │ │ (Python) │ │
-│ │ └──────────────────┘ │
-│ │ │
-│ │ DDS / ROS 2 network │
-│ │ │
-│ │ ┌──────────────────┐ │
-│ │ │ rqt_graph │ │
-│ │ │ rqt_plot │ │
-│ │ │ ros2 bag │ │
-│ │ └──────────────────┘ │
-└────────────────────────┼─────────────────────────────────────────┘
-│ USB Serial (DDS-XRCE)
-┌────────────────────────┼─────────────────────────────────────────┐
-│ ESP32 (hardware) │
-│ │
-│ ┌─────────────┐ ┌──────────────┐ ┌──────────────────┐ │
-│ │ HC-SR04 │ │ L298N │ │ Buzzer │ │
-│ │ Ultrasonic │ │ Motor Driver│ │ (safety alarm) │ │
-│ └──────┬──────┘ └──────┬───────┘ └──────────────────┘ │
-│ │ │ │
-│ ┌──────┴─────────────────┴─────┐ │
-│ │ micro-ROS firmware (C++) │ │
-│ │ pub /distance (Float32) │ │
-│ │ sub /cmd_speed (Int32) │ │
-│ │ PWM + digital GPIO │ │
-│ └──────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
+## 🧠 System Architecture
 
+```text
+┌──────────────────────────────────────────────────────────────────────┐
+│                          Personal PC (Ubuntu)                        │
+│                                                                      │
+│   ┌────────────────────┐        ┌──────────────────────────────┐     │
+│   │  micro-ROS Agent   │        │       Control Node           │     │
+│   │     (Docker)       │        │         (Python)             │     │
+│   │                    │        │                              │     │
+│   │  serial bridge     │        │  sub: /distance  (Float32)   │     │
+│   │  /dev/serial/by-id │        │  pub: /cmd_speed (Int32)     │     │
+│   │        │           │        │  linear mapping + deadband   │     │
+│   └────────┼───────────┘        └──────────────┬───────────────┘     │
+│            │                                   │                     │
+│            │        ROS 2 DDS Network          │                     │
+│            │   ┌───────────────────────────────┘                     │
+│            │   │                                                     │
+│            │   │   ┌──────────────────────────────┐                  │
+│            │   │   │    Actuator / Alarm Node     │                  │
+│            │   │   │          (Python)            │                  │
+│            │   │   │                              │                  │
+│            │   │   │  sub: /cmd_speed (Int32)     │                  │
+│            │   │   │  sub: /distance  (Float32)   │                  │
+│            │   │   │  monitor + safety logging    │                  │
+│            │   │   └──────────────────────────────┘                  │
+│            │   │                                                     │
+│            │   │   ┌──────────────────────────────┐                  │
+│            │   │   │   Visualization & Analysis   │                  │
+│            │   │   │  rqt_graph · rqt_plot        │                  │
+│            │   │   │  ros2 bag record / play      │                  │
+│            │   │   └──────────────────────────────┘                  │
+│            │   │                                                     │
+└────────────┼───┼─────────────────────────────────────────────────────┘
+             │   │
+             │   │  USB Serial — DDS-XRCE (micro-ROS transport)
+             │   │
+┌────────────┼───┼─────────────────────────────────────────────────────┐
+│            │   │                  ESP32 (hardware)                    │
+│            ▼   ▼                                                     │
+│   ┌──────────────────────────────────────────────┐                   │
+│   │        micro-ROS Firmware (C++ / Arduino)    │                   │
+│   │                                              │                   │
+│   │   pub: /distance  (Float32, cm)              │                   │
+│   │   sub: /cmd_speed (Int32, 0–255)             │                   │
+│   │   local safety: buzzer < threshold           │                   │
+│   └───────┬─────────────────────┬────────────────┘                   │
+│           │                     │                                    │
+│   ┌───────▼───────┐     ┌───────▼────────┐     ┌──────────────────┐  │
+│   │   HC-SR04     │     │     L298N      │     │     Buzzer       │  │
+│   │  Ultrasonic   │     │  Motor Driver  │     │  Safety Alarm    │  │
+│   │               │     │                │     │                  │  │
+│   │  TRIG / ECHO  │     │ ENA IN1 IN2    │     │  digital GPIO    │  │
+│   │  (voltage     │     │ ENB IN3 IN4    │     │                  │  │
+│   │   divider)    │     │                │     │                  │  │
+│   └───────────────┘     └───┬────────┬───┘     └──────────────────┘  │
+│                             │        │                               │
+│                        ┌────▼──┐  ┌──▼────┐                          │
+│                        │Motor A│  │Motor B│                          │
+│                        └───────┘  └───────┘                          │
+│                                                                      │
+│   Power: external battery pack → L298N 12V → common GND with ESP32   │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 **Data flow:**
-1. ESP32 reads HC-SR04 → publishes `/distance` (Float32, cm) to the Agent.
-2. Control Node maps distance → speed → publishes `/cmd_speed` (Int32).
-3. ESP32 subscribes to `/cmd_speed` → PWM on L298N.
-4. ESP32's local safety logic (buzzer) fires independently below threshold.
 
+1. **ESP32 → PC:** HC-SR04 distance is read and published as `/distance` (`Float32`, cm) through the micro-ROS Agent.
+2. **Control Node:** subscribes to `/distance`, applies linear mapping (far = fast, close = slow, `< safety_distance` = stop), publishes `/cmd_speed` (`Int32`, 0–255).
+3. **ESP32 ← PC:** subscribes to `/cmd_speed` and writes PWM to the L298N `ENA`/`ENB` pins.
+4. **Local safety:** the ESP32 independently fires the buzzer below the hard threshold — a fallback that works even if the PC-side node stalls.
+5. **Observability:** `rqt_graph`, `rqt_plot`, and `ros2 bag` sit on the DDS network for live visualization and later replay.
+
+   
 ---
 
 ## 📚 Learning Outcomes
