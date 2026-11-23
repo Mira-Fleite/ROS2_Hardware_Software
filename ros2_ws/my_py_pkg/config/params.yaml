@@ -1,0 +1,10 @@
+control_node_params:
+  ros__parameters:
+    safety_distance: 10.0
+    max_distance: 50.0
+    max_speed: 200
+
+actuator_node_params:
+  ros__parameters:
+    safety_distance: 10.0
+    max_distance: 50.0
